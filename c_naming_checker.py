@@ -30,9 +30,34 @@ def is_prefixed_with_filename(identifier, file_name):
     base_name = os.path.splitext(os.path.basename(file_name))[0]
     
     # Check if the identifier starts with the base name, in either lower case or upper case (for snake_case or SNAKE_CASE)
-    if identifier.startswith(base_name.lower() + "_") or identifier.startswith(base_name.upper() + "_"):
-        return True
-    return False
+    return identifier.startswith(base_name.lower() + "_") or identifier.startswith(base_name.upper() + "_")
+
+# Function to check if the identifier is prefixed with the enum type
+def is_prefixed_with_enum_type(identifier, enum_type):
+    return identifier.startswith(enum_type.upper() + "_")
+
+# Function to check if typedefs follow the naming convention with '_t' suffix
+def is_typedef_correctly_named(name, typedef_base):
+    return name == f"{typedef_base}_t"
+
+# Helper function to create a finding dictionary
+def create_finding(node, kind, name=None, enum_type='', typedef_base=''):
+    # Use node.spelling if name is not provided
+    if name is None:
+        name = node.spelling
+    return {
+        'name': name,
+        'kind': kind,
+        'enum_type': enum_type,
+        'typedef_base': typedef_base,
+        'is_file_prefix': is_prefixed_with_filename(name, c_file_name),
+        'is_enum_prefix':  is_prefixed_with_enum_type(name, enum_type),
+        'is_typedef_base_and_suffix': is_typedef_correctly_named(name, typedef_base),
+        'case': detect_case(name),
+        'file': node.location.file.name,
+        'line': node.location.line,
+        'column': node.location.column,
+    }
 
 def visit_node(node, file_name, depth=0):
     file_extension = os.path.splitext(file_name)[1]
@@ -43,138 +68,44 @@ def visit_node(node, file_name, depth=0):
         is_header = file_extension == '.h'
 
         if node.kind == clang.cindex.CursorKind.MACRO_DEFINITION:
-            kind = 'Global Define' if is_header else 'Define'
-            findings.append({
-                'name': node.spelling,
-                'file': node.location.file.name,
-                'line': node.location.line,
-                'column': node.location.column,
-                'kind': kind,
-                'enum_type': '',
-                'typedef_base': '',
-                'case': detect_case(node.spelling),
-                'is_prefixed': is_prefixed_with_filename(node.spelling, file_name)
-            })
+            kind = 'Global Define' if is_header else 'Local Define'
+            findings.append(create_finding(node, kind))
         
         elif node.kind == clang.cindex.CursorKind.STRUCT_DECL:
             kind = 'Global Struct' if is_header else 'Local Struct'
-            findings.append({
-                'name': node.spelling,
-                'file': node.location.file.name,
-                'line': node.location.line,
-                'column': node.location.column,
-                'kind': kind,
-                'enum_type': '',
-                'typedef_base': '',
-                'case': detect_case(node.spelling),
-                'is_prefixed': is_prefixed_with_filename(node.spelling, file_name)
-            })
+            findings.append(create_finding(node, kind))
             for child in node.get_children():
                 if child.kind == clang.cindex.CursorKind.FIELD_DECL:
-                    findings.append({
-                        'name': child.spelling,
-                        'file': node.location.file.name,
-                        'line': node.location.line,
-                        'column': node.location.column,
-                        'kind': 'Member Variable',
-                        'enum_type': '',
-                        'typedef_base': '',
-                        'case': detect_case(child.spelling),
-                        'is_prefixed': is_prefixed_with_filename(child.spelling, file_name)
-                    })
-        
+                    findings.append(create_finding(child, kind='Member Variable'))
+
         elif node.kind == clang.cindex.CursorKind.ENUM_DECL:
             kind = 'Global Enum' if is_header else 'Local Enum'
-            findings.append({
-                'name': node.spelling,
-                'file': node.location.file.name,
-                'line': node.location.line,
-                'column': node.location.column,
-                'kind': kind,
-                'enum_type': '',
-                'typedef_base': '',
-                'case': detect_case(node.spelling),
-                'is_prefixed': is_prefixed_with_filename(node.spelling, file_name)
-            })
+            findings.append(create_finding(node, kind))
             for child in node.get_children():
                 if child.kind == clang.cindex.CursorKind.ENUM_CONSTANT_DECL:
                     kind = 'Global Enum Value' if is_header else 'Local Enum Value'
-                    findings.append({
-                        'name': child.spelling,
-                        'file': node.location.file.name,
-                        'line': node.location.line,
-                        'column': node.location.column,
-                        'kind': kind,
-                        'enum_type': node.spelling,
-                        'typedef_base': '',
-                        'case': detect_case(child.spelling),
-                        'is_prefixed': is_prefixed_with_filename(child.spelling, file_name)
-                    })
-        
+                    findings.append(create_finding(child, kind, enum_type=node.spelling))
+
         elif node.kind == clang.cindex.CursorKind.TYPEDEF_DECL:
             kind = 'Global Typedef' if is_header else 'Local Typedef'
-            findings.append({
-                'name': node.spelling,
-                'file': node.location.file.name,
-                'line': node.location.line,
-                'column': node.location.column,
-                'kind': kind,
-                'enum_type': '',
-                'typedef_base': node.underlying_typedef_type.spelling.split()[-1],
-                'case': detect_case(node.spelling),
-                'is_prefixed': is_prefixed_with_filename(node.spelling, file_name)
-            })
-        
+            findings.append(create_finding(node, kind, typedef_base=node.underlying_typedef_type.spelling.split()[-1]))
+
         elif node.kind == clang.cindex.CursorKind.FUNCTION_DECL:
             if is_header or node.storage_class == clang.cindex.StorageClass.EXTERN:
                 kind = 'Global Function'
             else:
                 kind = 'Local Function'
-
-            findings.append({
-                'name': node.spelling,
-                'file': node.location.file.name,
-                'line': node.location.line,
-                'column': node.location.column,
-                'kind': kind,
-                'enum_type': '',
-                'typedef_base': '',
-                'case': detect_case(node.spelling),
-                'is_prefixed': is_prefixed_with_filename(node.spelling, file_name)
-            })
+            findings.append(create_finding(node, kind))
             for param in node.get_arguments():
-                findings.append({
-                    'name': param.spelling,
-                    'file': node.location.file.name,
-                    'line': node.location.line,
-                    'column': node.location.column,
-                    'kind': 'Parameter',
-                    'enum_type': '',
-                    'typedef_base': '',
-                    'case': detect_case(param.spelling),
-                    'is_prefixed': is_prefixed_with_filename(param.spelling, file_name)
-                })
-        
+                findings.append(create_finding(param, kind='Parameter'))
+
         elif node.kind == clang.cindex.CursorKind.VAR_DECL:
             if is_header or node.storage_class == clang.cindex.StorageClass.EXTERN:
                 kind = 'Global Variable'
             else:
-                if node.storage_class == clang.cindex.StorageClass.STATIC:
-                    kind = 'Local Variable'
-                else:
-                    kind = 'Auto Variable'
-            findings.append({
-                'name': node.spelling,
-                'file': node.location.file.name,
-                'line': node.location.line,
-                'column': node.location.column,
-                'kind': kind,
-                'enum_type': '',
-                'typedef_base': '',
-                'case': detect_case(node.spelling),
-                'is_prefixed': is_prefixed_with_filename(node.spelling, file_name)
-            })
-    
+                kind = 'Local Variable' if node.storage_class == clang.cindex.StorageClass.STATIC else 'Auto Variable'
+            findings.append(create_finding(node, kind))
+
     # Recurse through child nodes
     if node.kind != clang.cindex.CursorKind.TYPEDEF_DECL:
         for child in node.get_children():
