@@ -43,7 +43,7 @@ def detect_case(identifier):
 # Function to check if the identifier is prefixed with the base file name
 def is_prefixed_with_filename(identifier, file_name):
     base_name = os.path.splitext(os.path.basename(file_name))[0]
-    return identifier.startswith(base_name.lower() + "_") or identifier.startswith(base_name.upper() + "_")
+    return identifier.startswith(base_name.lower() + "_") or identifier.startswith(base_name.upper() + "_") or identifier == base_name.lower() or identifier == base_name.upper()
 
 # Function to check if the identifier is prefixed with the enum type
 def is_prefixed_with_enum_type(identifier, enum_type):
@@ -71,10 +71,18 @@ def generate_error_message(finding):
     rule = rules[kind]
     case = rule['case']
 
-    msg = f"{file}:{line}:{column}: error: '{kind}' '{name}' should be in {case}"
+    msg = f"{file}:{line}:{column}: error: '{name}' ('{kind}') should be"
 
-    if rule['is_file_prefix']:
-        msg += f", prefixed with file name "
+    n = 0
+    if rule['case'] != finding['case']:
+        msg += f" in {case}"
+        n+=1
+
+    if rule['is_file_prefix'] and not finding['is_file_prefix']:
+        if n > 0:
+            msg += ","
+        n += 1
+        msg += f" prefixed with file name "
         filename = os.path.splitext(os.path.basename(file))[0]
 
         if case == "SNAKE_CASE":
@@ -82,10 +90,16 @@ def generate_error_message(finding):
 
         msg += f"'{filename}_'"
 
-    if rule['is_enum_prefix']:
-        msg += f", prefixed with enum name '{enum_type.upper()}_'"
-    if rule['is_typedef_base_and_suffix']:
-        msg += f", prefixed with typedef base name '{typedef_base}' and suffixed with '_t'"
+    if rule['is_enum_prefix'] and not finding['is_enum_prefix']:
+        if n > 0:
+            msg += ","
+        n += 1
+        msg += f" prefixed with enum name '{enum_type.upper()}_'"
+    if rule['is_typedef_base_and_suffix'] and not finding['is_typedef_base_and_suffix']:
+        if n > 0:
+            msg += ","
+        n += 1
+        msg += f" prefixed with typedef base name '{typedef_base}' and suffixed with '_t'"
 
     return msg
 
