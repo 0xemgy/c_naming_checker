@@ -28,8 +28,6 @@ def detect_case(identifier):
 # Function to check if the identifier is prefixed with the base file name
 def is_prefixed_with_filename(identifier, file_name):
     base_name = os.path.splitext(os.path.basename(file_name))[0]
-    
-    # Check if the identifier starts with the base name, in either lower case or upper case (for snake_case or SNAKE_CASE)
     return identifier.startswith(base_name.lower() + "_") or identifier.startswith(base_name.upper() + "_")
 
 # Function to check if the identifier is prefixed with the enum type
@@ -40,31 +38,62 @@ def is_prefixed_with_enum_type(identifier, enum_type):
 def is_typedef_correctly_named(name, typedef_base):
     return name == f"{typedef_base}_t"
 
+# Define rules for each kind
+def check_rule(finding):
+    kind = finding['kind']
+    name = finding['name']
+    case = finding['case']
+    
+    # Rules mapping
+    rules = {
+        'Local Define': lambda: case == 'SNAKE_CASE' and finding['is_file_prefix'],
+        'Local Struct': lambda: case == 'snake_case' and finding['is_file_prefix'],
+        'Local Enum': lambda: case == 'snake_case' and finding['is_file_prefix'],
+        'Local Enum Value': lambda: case == 'SNAKE_CASE' and finding['is_enum_prefix'],
+        'Local Typedef': lambda: finding['is_typedef_base_and_suffix'],
+        'Local Function': lambda: case == 'snake_case' and finding['is_file_prefix'],
+        'Local Variable': lambda: case == 'snake_case' and finding['is_file_prefix'],
+        
+        'Global Define': lambda: case == 'SNAKE_CASE' and finding['is_file_prefix'],
+        'Global Struct': lambda: case == 'snake_case' and finding['is_file_prefix'],
+        'Global Enum': lambda: case == 'snake_case' and finding['is_file_prefix'],
+        'Global Enum Value': lambda: case == 'SNAKE_CASE' and finding['is_enum_prefix'],
+        'Global Typedef': lambda: finding['is_typedef_base_and_suffix'],
+        'Global Function': lambda: case == 'snake_case' and finding['is_file_prefix'],
+        'Global Variable': lambda: case == 'snake_case' and finding['is_file_prefix'],
+        
+        'Parameter': lambda: case == 'snake_case',
+        'Member Variable': lambda: case == 'snake_case',
+        'Auto Variable': lambda: case == 'snake_case',
+    }
+
+    # Check rule and return result
+    return rules.get(kind, lambda: False)()
+
 # Helper function to create a finding dictionary
 def create_finding(node, kind, name=None, enum_type='', typedef_base=''):
-    # Use node.spelling if name is not provided
     if name is None:
         name = node.spelling
-    return {
+    finding = {
         'name': name,
         'kind': kind,
         'enum_type': enum_type,
         'typedef_base': typedef_base,
         'is_file_prefix': is_prefixed_with_filename(name, c_file_name),
-        'is_enum_prefix':  is_prefixed_with_enum_type(name, enum_type),
+        'is_enum_prefix': is_prefixed_with_enum_type(name, enum_type),
         'is_typedef_base_and_suffix': is_typedef_correctly_named(name, typedef_base),
         'case': detect_case(name),
         'file': node.location.file.name,
         'line': node.location.line,
         'column': node.location.column,
     }
+    finding['ok'] = "yes" if check_rule(finding) else "no"
+    return finding
 
 def visit_node(node, file_name, depth=0):
     file_extension = os.path.splitext(file_name)[1]
 
-    # Check if the declaration/definition is from the current file and not from headers
     if node.location.file and node.location.file.name == file_name:
-        # Determine the visibility based on file type and static keyword
         is_header = file_extension == '.h'
 
         if node.kind == clang.cindex.CursorKind.MACRO_DEFINITION:
