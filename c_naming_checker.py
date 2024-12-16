@@ -198,7 +198,6 @@ if __name__ == "__main__":
 
             ignore = False
             for pattern in patterns:
-                print(pattern, os.path.relpath(file))
                 if fnmatch.fnmatch(os.path.relpath(file), pattern):
                     ignore = True
                     break
