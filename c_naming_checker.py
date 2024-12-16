@@ -1,6 +1,5 @@
 import argparse
 import clang.cindex
-from tabulate import tabulate
 import os
 import re
 import sys
@@ -162,8 +161,7 @@ def visit_node(node, file_name, depth=0):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Check C identifiers for naming convention compliance.")
-    parser.add_argument("--c_files", nargs="+", required=True, help="List of C source files.")
-    parser.add_argument("--h_files", nargs="+", required=False, help="List of header files.")
+    parser.add_argument("--files", nargs="+", required=True, help="List of source and header files.")
     parser.add_argument("--libclang", required=True, help="Path to libclang.dll.")
     args = parser.parse_args()
 
@@ -173,13 +171,8 @@ if __name__ == "__main__":
     # Initialize the Clang index
     index = clang.cindex.Index.create()
 
-    files = args.c_files
-
-    if args.h_files:
-        files += args.h_files
-
     # Parse the C file
-    for file in files:
+    for file in args.files:
         if os.path.isfile(file):
             translation_unit = index.parse(file, options=clang.cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
             visit_node(translation_unit.cursor, file)
@@ -187,8 +180,6 @@ if __name__ == "__main__":
             error = True
             print(f"{file}:1:1: error: File not found")
 
-    # Print the findings in a nicely formatted table
-    print(tabulate(findings, headers="keys", tablefmt="simple"))
 
     for finding in findings:
         if not finding['ok']:
