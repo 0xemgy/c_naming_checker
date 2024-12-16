@@ -61,15 +61,10 @@ def is_typedef_correctly_named(name, typedef_base):
     return name == f"{typedef_base}_t"
 
 def check_rule(finding):
-    is_ok = True
-    for rule in rules[finding['kind']]:
-        if not rule is False:
-            is_ok = rules[finding['kind']][rule] is finding[rule]
-
-            if not is_ok:
-                break
-
-    return is_ok
+    for key, value in rules[finding['kind']].items():
+        if value and finding.get(key) != value:
+            return False
+    return True
 
 def generate_error_message(finding):
     file = finding['file']
