@@ -168,7 +168,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Set the path to the Clang library for Windows (libclang.dll)
-    clang.cindex.Config.set_library_file(r"C:\LLVM\bin\libclang.dll")
+    clang.cindex.Config.set_library_file(args.libclang)
 
     # Initialize the Clang index
     index = clang.cindex.Index.create()
