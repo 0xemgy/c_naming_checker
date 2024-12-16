@@ -1,5 +1,6 @@
 import argparse
 import clang.cindex
+import fnmatch
 import os
 import re
 import sys
@@ -176,6 +177,7 @@ def visit_node(node, file_name, depth=0):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Check C identifiers for naming convention compliance.")
     parser.add_argument("--files", nargs="+", required=True, help="List of source and header files.")
+    parser.add_argument("--ignore", required=True, help="Files and paths to ignore")
     parser.add_argument("--libclang", required=True, help="Path to libclang.dll.")
     args = parser.parse_args()
 
@@ -185,18 +187,28 @@ if __name__ == "__main__":
     # Initialize the Clang index
     index = clang.cindex.Index.create()
 
+    patterns = []
+    patterns.append(args.ignore)
+
     # Parse the C file
     for file in args.files:
         if os.path.isfile(file):
             if not os.path.isabs(file):
                 file = os.path.abspath(file)
 
-            translation_unit = index.parse(file, options=clang.cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
-            visit_node(translation_unit.cursor, file)
+            ignore = False
+            for pattern in patterns:
+                print(pattern, os.path.relpath(file))
+                if fnmatch.fnmatch(os.path.relpath(file), pattern):
+                    ignore = True
+                    break
+
+            if not ignore:
+                translation_unit = index.parse(file, options=clang.cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+                visit_node(translation_unit.cursor, file)
         else:
             error = True
             print(f"{file}:1:1: error: File not found")
-
 
     for finding in findings:
         if not finding['ok']:
