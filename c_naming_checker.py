@@ -188,6 +188,9 @@ if __name__ == "__main__":
     # Parse the C file
     for file in args.files:
         if os.path.isfile(file):
+            if not os.path.isabs(file):
+                file = os.path.abspath(file)
+
             translation_unit = index.parse(file, options=clang.cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
             visit_node(translation_unit.cursor, file)
         else:
