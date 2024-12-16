@@ -16,6 +16,28 @@ translation_unit = index.parse(c_file_name, options=clang.cindex.TranslationUnit
 # List to hold findings
 findings = []
 
+# Rules mapping
+rules = {
+    'Local Define':     {   'case' : 'SNAKE_CASE'   , 'is_file_prefix' : True   , 'is_enum_prefix' : False  , 'is_typedef_base_and_suffix' : False  },
+    'Local Struct':     {   'case' : 'snake_case'   , 'is_file_prefix' : True   , 'is_enum_prefix' : False  , 'is_typedef_base_and_suffix' : False  },
+    'Local Enum':       {   'case' : 'snake_case'   , 'is_file_prefix' : True   , 'is_enum_prefix' : False  , 'is_typedef_base_and_suffix' : False  },
+    'Local Enum Value': {   'case' : 'SNAKE_CASE'   , 'is_file_prefix' : True   , 'is_enum_prefix' : True   , 'is_typedef_base_and_suffix' : False  },
+    'Local Typedef':    {   'case' : 'snake_case'   , 'is_file_prefix' : True   , 'is_enum_prefix' : False  , 'is_typedef_base_and_suffix' : True   },
+    'Local Function':   {   'case' : 'snake_case'   , 'is_file_prefix' : True   , 'is_enum_prefix' : False  , 'is_typedef_base_and_suffix' : False  },
+    'Local Variable':   {   'case' : 'snake_case'   , 'is_file_prefix' : True   , 'is_enum_prefix' : False  , 'is_typedef_base_and_suffix' : False  },
+    'Global Define':    {   'case' : 'SNAKE_CASE'   , 'is_file_prefix' : True   , 'is_enum_prefix' : False  , 'is_typedef_base_and_suffix' : False  },
+    'Global Struct':    {   'case' : 'snake_case'   , 'is_file_prefix' : True   , 'is_enum_prefix' : False  , 'is_typedef_base_and_suffix' : False  },
+    'Global Enum':      {   'case' : 'snake_case'   , 'is_file_prefix' : True   , 'is_enum_prefix' : False  , 'is_typedef_base_and_suffix' : False  },
+    'Global Enum Value':{   'case' : 'SNAKE_CASE'   , 'is_file_prefix' : True   , 'is_enum_prefix' : True   , 'is_typedef_base_and_suffix' : False  },
+    'Global Typedef':   {   'case' : 'snake_case'   , 'is_file_prefix' : True   , 'is_enum_prefix' : False  , 'is_typedef_base_and_suffix' : True   },
+    'Global Function':  {   'case' : 'snake_case'   , 'is_file_prefix' : True   , 'is_enum_prefix' : False  , 'is_typedef_base_and_suffix' : False  },
+    'Global Variable':  {   'case' : 'snake_case'   , 'is_file_prefix' : True   , 'is_enum_prefix' : False  , 'is_typedef_base_and_suffix' : False  },
+    'Parameter':        {   'case' : 'snake_case'   , 'is_file_prefix' : False  , 'is_enum_prefix' : False  , 'is_typedef_base_and_suffix' : False  },
+    'Member Variable':  {   'case' : 'snake_case'   , 'is_file_prefix' : False  , 'is_enum_prefix' : False  , 'is_typedef_base_and_suffix' : False  },
+    'Auto Variable':    {   'case' : 'snake_case'   , 'is_file_prefix' : False  , 'is_enum_prefix' : False  , 'is_typedef_base_and_suffix' : False  },
+}
+
+
 # Function to detect case of identifiers
 def detect_case(identifier):
     if re.match(r'^[a-z0-9]+(_[a-z0-9]+)*$', identifier):
@@ -38,37 +60,46 @@ def is_prefixed_with_enum_type(identifier, enum_type):
 def is_typedef_correctly_named(name, typedef_base):
     return name == f"{typedef_base}_t"
 
-# Define rules for each kind
 def check_rule(finding):
+    is_ok = True
+    for rule in rules[finding['kind']]:
+        if not rule is False:
+            is_ok = rules[finding['kind']][rule] is finding[rule]
+
+            if not is_ok:
+                break
+
+    return is_ok
+
+def generate_error_message(finding):
+    file = finding['file']
+    line = finding['line']
+    column = finding['column']
     kind = finding['kind']
     name = finding['name']
-    case = finding['case']
-    
-    # Rules mapping
-    rules = {
-        'Local Define': lambda: case == 'SNAKE_CASE' and finding['is_file_prefix'],
-        'Local Struct': lambda: case == 'snake_case' and finding['is_file_prefix'],
-        'Local Enum': lambda: case == 'snake_case' and finding['is_file_prefix'],
-        'Local Enum Value': lambda: case == 'SNAKE_CASE' and finding['is_enum_prefix'],
-        'Local Typedef': lambda: finding['is_typedef_base_and_suffix'],
-        'Local Function': lambda: case == 'snake_case' and finding['is_file_prefix'],
-        'Local Variable': lambda: case == 'snake_case' and finding['is_file_prefix'],
-        
-        'Global Define': lambda: case == 'SNAKE_CASE' and finding['is_file_prefix'],
-        'Global Struct': lambda: case == 'snake_case' and finding['is_file_prefix'],
-        'Global Enum': lambda: case == 'snake_case' and finding['is_file_prefix'],
-        'Global Enum Value': lambda: case == 'SNAKE_CASE' and finding['is_enum_prefix'],
-        'Global Typedef': lambda: finding['is_typedef_base_and_suffix'],
-        'Global Function': lambda: case == 'snake_case' and finding['is_file_prefix'],
-        'Global Variable': lambda: case == 'snake_case' and finding['is_file_prefix'],
-        
-        'Parameter': lambda: case == 'snake_case',
-        'Member Variable': lambda: case == 'snake_case',
-        'Auto Variable': lambda: case == 'snake_case',
-    }
+    typedef_base = finding['typedef_base']
+    enum_type = finding['enum_type']
 
-    # Check rule and return result
-    return rules.get(kind, lambda: False)()
+    rule = rules[kind]
+    case = rule['case']
+
+    msg = f"{file}:{line}:{column}: error: '{kind}' '{name}' should be in {case}"
+
+    if rule['is_file_prefix']:
+        msg += f", prefixed with file name "
+        filename = os.path.splitext(os.path.basename(file))[0]
+
+        if case is "SNAKE_CASE":
+            filename = filename.upper()
+
+        msg += f"'{filename}_'"
+
+    if rule['is_enum_prefix']:
+        msg += f", prefixed with enum name '{enum_type.upper()}_'"
+    if rule['is_typedef_base_and_suffix']:
+        msg += f", prefixed with typedef base name '{typedef_base}' and suffixed with '_t'"
+
+    return msg
 
 # Helper function to create a finding dictionary
 def create_finding(node, kind, name=None, enum_type='', typedef_base=''):
@@ -87,7 +118,7 @@ def create_finding(node, kind, name=None, enum_type='', typedef_base=''):
         'line': node.location.line,
         'column': node.location.column,
     }
-    finding['ok'] = "yes" if check_rule(finding) else "no"
+    finding['ok'] = check_rule(finding)
     return finding
 
 def visit_node(node, file_name, depth=0):
@@ -145,3 +176,7 @@ visit_node(translation_unit.cursor, c_file_name)
 
 # Print the findings in a nicely formatted table
 print(tabulate(findings, headers="keys", tablefmt="simple"))
+
+for finding in findings:
+    if not finding['ok']:
+        print(generate_error_message(finding))
