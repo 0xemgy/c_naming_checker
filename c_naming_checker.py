@@ -1,20 +1,14 @@
+import argparse
 import clang.cindex
 from tabulate import tabulate
 import os
 import re
-
-# Set the path to the Clang library for Windows (libclang.dll)
-clang.cindex.Config.set_library_file(r"C:\LLVM\bin\libclang.dll")
-
-# Initialize the Clang index
-index = clang.cindex.Index.create()
-
-# Parse the C file
-c_file_name = r"C:\work\repos\motor_control_ecu\src\bsw\main.c"
-translation_unit = index.parse(c_file_name, options=clang.cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+import sys
 
 # List to hold findings
 findings = []
+
+error = False
 
 # Rules mapping
 rules = {
@@ -84,7 +78,7 @@ def generate_error_message(finding):
         msg += f", prefixed with file name "
         filename = os.path.splitext(os.path.basename(file))[0]
 
-        if case is "SNAKE_CASE":
+        if case == "SNAKE_CASE":
             filename = filename.upper()
 
         msg += f"'{filename}_'"
@@ -97,7 +91,7 @@ def generate_error_message(finding):
     return msg
 
 # Helper function to create a finding dictionary
-def create_finding(node, kind, name=None, enum_type='', typedef_base=''):
+def create_finding(file_name, node, kind, name=None, enum_type='', typedef_base=''):
     if name is None:
         name = node.spelling
     finding = {
@@ -105,7 +99,7 @@ def create_finding(node, kind, name=None, enum_type='', typedef_base=''):
         'kind': kind,
         'enum_type': enum_type,
         'typedef_base': typedef_base,
-        'is_file_prefix': is_prefixed_with_filename(name, c_file_name),
+        'is_file_prefix': is_prefixed_with_filename(name, file_name),
         'is_enum_prefix': is_prefixed_with_enum_type(name, enum_type),
         'is_typedef_base_and_suffix': is_typedef_correctly_named(name, typedef_base),
         'case': detect_case(name),
@@ -124,54 +118,81 @@ def visit_node(node, file_name, depth=0):
 
         if node.kind == clang.cindex.CursorKind.MACRO_DEFINITION:
             kind = 'Global Define' if is_header else 'Local Define'
-            findings.append(create_finding(node, kind))
+            findings.append(create_finding(file_name, node, kind))
         
         elif node.kind == clang.cindex.CursorKind.STRUCT_DECL:
             kind = 'Global Struct' if is_header else 'Local Struct'
-            findings.append(create_finding(node, kind))
+            findings.append(create_finding(file_name, node, kind))
             for child in node.get_children():
                 if child.kind == clang.cindex.CursorKind.FIELD_DECL:
-                    findings.append(create_finding(child, kind='Member Variable'))
+                    findings.append(create_finding(file_name, child, kind='Member Variable'))
 
         elif node.kind == clang.cindex.CursorKind.ENUM_DECL:
             kind = 'Global Enum' if is_header else 'Local Enum'
-            findings.append(create_finding(node, kind))
+            findings.append(create_finding(file_name, node, kind))
             for child in node.get_children():
                 if child.kind == clang.cindex.CursorKind.ENUM_CONSTANT_DECL:
                     kind = 'Global Enum Value' if is_header else 'Local Enum Value'
-                    findings.append(create_finding(child, kind, enum_type=node.spelling))
+                    findings.append(create_finding(file_name, child, kind, enum_type=node.spelling))
 
         elif node.kind == clang.cindex.CursorKind.TYPEDEF_DECL:
             kind = 'Global Typedef' if is_header else 'Local Typedef'
-            findings.append(create_finding(node, kind, typedef_base=node.underlying_typedef_type.spelling.split()[-1]))
+            findings.append(create_finding(file_name, node, kind, typedef_base=node.underlying_typedef_type.spelling.split()[-1]))
 
         elif node.kind == clang.cindex.CursorKind.FUNCTION_DECL:
             if is_header or node.storage_class == clang.cindex.StorageClass.EXTERN:
                 kind = 'Global Function'
             else:
                 kind = 'Local Function'
-            findings.append(create_finding(node, kind))
+            findings.append(create_finding(file_name, node, kind))
             for param in node.get_arguments():
-                findings.append(create_finding(param, kind='Parameter'))
+                findings.append(create_finding(file_name, param, kind='Parameter'))
 
         elif node.kind == clang.cindex.CursorKind.VAR_DECL:
             if is_header or node.storage_class == clang.cindex.StorageClass.EXTERN:
                 kind = 'Global Variable'
             else:
                 kind = 'Local Variable' if node.storage_class == clang.cindex.StorageClass.STATIC else 'Auto Variable'
-            findings.append(create_finding(node, kind))
+            findings.append(create_finding(file_name, node, kind))
 
     # Recurse through child nodes
     if node.kind != clang.cindex.CursorKind.TYPEDEF_DECL:
         for child in node.get_children():
             visit_node(child, file_name, depth + 1)
 
-# Visit the root node (TranslationUnit) and traverse its children
-visit_node(translation_unit.cursor, c_file_name)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Check C identifiers for naming convention compliance.")
+    parser.add_argument("--c_files", nargs="+", required=True, help="List of C source files.")
+    parser.add_argument("--h_files", nargs="+", required=False, help="List of header files.")
+    parser.add_argument("--libclang", required=True, help="Path to libclang.dll.")
+    args = parser.parse_args()
 
-# Print the findings in a nicely formatted table
-print(tabulate(findings, headers="keys", tablefmt="simple"))
+    # Set the path to the Clang library for Windows (libclang.dll)
+    clang.cindex.Config.set_library_file(r"C:\LLVM\bin\libclang.dll")
 
-for finding in findings:
-    if not finding['ok']:
-        print(generate_error_message(finding))
+    # Initialize the Clang index
+    index = clang.cindex.Index.create()
+
+    files = args.c_files
+
+    if args.h_files:
+        files += args.h_files
+
+    # Parse the C file
+    for file in files:
+        if os.path.isfile(file):
+            translation_unit = index.parse(file, options=clang.cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+            visit_node(translation_unit.cursor, file)
+        else:
+            error = True
+            print(f"{file}:1:1: error: File not found")
+
+    # Print the findings in a nicely formatted table
+    print(tabulate(findings, headers="keys", tablefmt="simple"))
+
+    for finding in findings:
+        if not finding['ok']:
+            error = True
+            print(generate_error_message(finding))
+
+    sys.exit(error)
