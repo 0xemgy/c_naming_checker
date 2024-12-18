@@ -1,12 +1,14 @@
 import argparse
 import clang.cindex
 import fnmatch
+import json
 import os
 import re
 import sys
 
 # List to hold findings
 findings = []
+stats = {}
 
 error = False
 
@@ -122,6 +124,12 @@ def create_finding(file_name, node, kind, name=None, enum_type='', typedef_base=
         'column': node.location.column,
     }
     finding['ok'] = check_rule(finding)
+
+    if not finding["kind"] in stats:
+        stats[finding["kind"]] = { "count": 0}
+
+    stats[finding["kind"]]["count"] += 1
+
     return finding
 
 def visit_node(node, file_name, depth=0):
@@ -179,6 +187,7 @@ if __name__ == "__main__":
     parser.add_argument("--files", nargs="+", required=True, help="List of source and header files.")
     parser.add_argument("--ignore", required=True, help="Files and paths to ignore")
     parser.add_argument("--libclang", required=True, help="Path to libclang.dll.")
+    parser.add_argument("--out", required=True, help="Path to report file.")
     args = parser.parse_args()
 
     # Set the path to the Clang library for Windows (libclang.dll)
@@ -213,5 +222,8 @@ if __name__ == "__main__":
         if not finding['ok']:
             error = True
             print(generate_error_message(finding))
+
+    with open(args.out, "w") as f:
+        json.dump(stats, f, indent=4)
 
     sys.exit(error)
