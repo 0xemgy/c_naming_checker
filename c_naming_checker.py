@@ -123,10 +123,7 @@ def create_finding(file_name, node, kind, name=None, enum_type='', typedef_base=
         'line': node.location.line,
         'column': node.location.column,
     }
-    finding['ok'] = check_rule(finding)
-
-    if not finding["kind"] in stats:
-        stats[finding["kind"]] = { "count": 0}
+    finding['ok'] = check_rule(finding)     
 
     stats[finding["kind"]]["count"] += 1
 
@@ -198,6 +195,9 @@ if __name__ == "__main__":
 
     patterns = []
     patterns.append(args.ignore)
+
+    for kind in rules:
+        stats[kind] = { "count": 0}
 
     # Parse the C file
     for file in args.files:
